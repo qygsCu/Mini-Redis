@@ -10,9 +10,10 @@ typedef struct DictEntry {
 } DictEntry;
 
 typedef struct Dict {
-    DictEntry **table;
-    size_t size;
-    size_t used;
+    DictEntry **table[2];
+    size_t size[2];
+    size_t used[2];
+    int rehashidx;
 } Dict;
 
 Dict* dictCreate(size_t initial_size);
