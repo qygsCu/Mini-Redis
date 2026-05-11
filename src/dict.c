@@ -12,6 +12,7 @@ static unsigned long hashFunction(const char *str) {
     return hash;
 }
 
+//每次Set和Get时搬运一个筒；Dict的size和used属性必须时刻根据增删变化！！！
 static int dictRehash(Dict *d, int n) {
     if (d->rehashidx == -1) return 0;
     while(n--) {
@@ -27,7 +28,7 @@ static int dictRehash(Dict *d, int n) {
             d->rehashidx = -1;
             return 0;
         }
-        while (d->table[0][d->rehashidx] == NULL) d->rehashidx++;
+        while (d->rehashidx < d->size[0] && d->table[0][d->rehashidx] == NULL) d->rehashidx++;
         int idx0 = d->rehashidx++;
         DictEntry *curr = d->table[0][idx0];
         while(curr) {
@@ -44,15 +45,21 @@ static int dictRehash(Dict *d, int n) {
     return 1;
 }
 
+
+//封装
 static void _dictRehashStep(Dict *d) {
     dictRehash(d, 1);
 }
 
+//创建变量后及时初始化：malloc出的是垃圾值，记得将table指向NULL；malloc后立即检查是否分配内存成功
 Dict* dictCreate(size_t initial_size) {
     Dict *d = malloc(sizeof(Dict));
     if (!d) return NULL;
     d->size[0] = initial_size;
     d->used[0] = 0;
+    d->table[1] = NULL;
+    d->size[1] = 0;
+    d->used[1] = 0;
     d->rehashidx = -1;
 
     d->table[0] = calloc(initial_size, sizeof(DictEntry*));
@@ -65,6 +72,7 @@ Dict* dictCreate(size_t initial_size) {
 
 int dictSet(Dict *d, const char *key, const char *value) {
     if(d==NULL || key==NULL || value==NULL) return 0;
+    //如果超出table[0]大小则开table[1]
     if (d->rehashidx == -1 && d->used[0] == d->size[0]) {
         d->rehashidx = 0;
         d->table[1] = calloc(2 * d->size[0], sizeof(DictEntry*));
@@ -72,7 +80,8 @@ int dictSet(Dict *d, const char *key, const char *value) {
         d->used[1] = 0;
     }
     int i = (d->rehashidx == -1)? 0: 1;
-    if (i == 1) _dictRehashStep(d);
+    if (i == 1) _dictRehashStep(d); //搬运一个
+    //i = 1时：先检查table[0]有没有；有直接修改，没有再去table[1]找；有直接修改，没有就在table[1]里加，保证table[0]只减不增
     size_t index = hashFunction(key) % d->size[0];
     DictEntry *e = d->table[0][index];
     while(e) {
@@ -109,6 +118,7 @@ int dictSet(Dict *d, const char *key, const char *value) {
 char* dictGet(Dict *d, const char *key) {
     if (d == NULL || key == NULL) return NULL;
     if (d->rehashidx != -1) _dictRehashStep(d);
+    //先去table[0]找再去table[1]找
     for(int i = 0; i < 2; i++) {
         size_t index = hashFunction(key) % d->size[i];
         DictEntry *e = d->table[i][index];
