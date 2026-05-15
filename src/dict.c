@@ -153,3 +153,32 @@ void dictFree(Dict *d) {
     }
     free(d);
 }
+
+int dictDelete(Dict *d, char *key) {
+    if (d == NULL || key == NULL) return;
+    if (d->rehashidx != -1) _dictRehashStep(d);
+    for(int i = 0; i < 2; i++) {
+        unsigned int idx = hashFunction(key) % d->size[i];
+        DictEntry *e = d->table[i][idx];
+        DictEntry *pre = NULL; //处理首节点时将pre设为NULL
+        while(e) {
+            if (strcmp(e->key, key) == 0) {
+                if (pre == NULL) {
+                    e = e->next;
+                }
+                else {
+                    pre->next = e->next;
+                }
+                free(e->value);
+                free(e->key);
+                free(e);
+                d->used[i]--;
+                return 1;
+            }
+            pre = e;
+            e = e->next;
+        }
+        if (d->rehashidx == -1) break;
+    }
+    return 0;
+} 

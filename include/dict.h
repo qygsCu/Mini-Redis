@@ -20,5 +20,6 @@ Dict* dictCreate(size_t initial_size);
 int dictSet(Dict *d, const char *key, const char *value);
 char* dictGet(Dict *d, const char *key);
 void dictFree(Dict *d);
+int dictDelete(Dict *d, char *key);
 
 #endif
