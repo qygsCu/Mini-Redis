@@ -164,7 +164,7 @@ int dictDelete(Dict *d, char *key) {
         while(e) {
             if (strcmp(e->key, key) == 0) {
                 if (pre == NULL) {
-                    e = e->next;
+                    d->table[i][idx] = e->next;
                 }
                 else {
                     pre->next = e->next;
