@@ -155,7 +155,7 @@ void dictFree(Dict *d) {
 }
 
 int dictDelete(Dict *d, char *key) {
-    if (d == NULL || key == NULL) return;
+    if (d == NULL || key == NULL) return 0;
     if (d->rehashidx != -1) _dictRehashStep(d);
     for(int i = 0; i < 2; i++) {
         unsigned int idx = hashFunction(key) % d->size[i];
