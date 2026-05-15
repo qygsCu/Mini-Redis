@@ -5,6 +5,7 @@
 #include <arpa/inet.h>
 #include <sys/socket.h>
 #include "../include/dict.h"
+#include "../include/protocol.h"
 
 #define PORT 6379
 #define BUFFER_SIZE 1024
@@ -56,9 +57,7 @@ int main() {
         if (valread > 0) {
             buffer[valread] = '\0';
             printf("Received: %s", buffer);
-
-            char *response = "+OK\r\n";
-            write(client_fd, response, strlen(response));
+            parse_and_execute(db, buffer, client_fd);
         }
         close(client_fd);
         
