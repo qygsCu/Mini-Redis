@@ -2,6 +2,7 @@
 #include <string.h>
 #include <unistd.h>
 #include "../include/dict.h"
+#include "../include/common.h"
 
 void parse_and_execute(Dict *db, char *buffer, int client_fd) {
     char cmd[16] = {0};
@@ -28,4 +29,26 @@ void parse_and_execute(Dict *db, char *buffer, int client_fd) {
         sprintf(response, "-ERR unknown command or wrong arguments\r\n");
     }
     write(client_fd, response, strlen(response));
+}
+
+//找到第一个合法\r\n并返回\r的指针
+char* find_crlf(ClientState *client) {
+    char *buf = client->buffer;
+    int len = client->querylen;
+    char *r_pos = buf;
+    int remaining_len = len;
+    while(remaining_len > 0) {
+        r_pos = (char *)memchr(r_pos, '\r', remaining_len);
+        if (r_pos == NULL) 
+            return NULL;
+        remaining_len = len - (r_pos - buf);
+        if (remaining_len < 2) 
+            return NULL; //此处是buf末尾为\r的情况
+        if (*(r_pos + 1) != '\n') {
+            r_pos++;
+            remaining_len--;
+        }
+        else return r_pos;
+    }
+    return NULL;
 }
