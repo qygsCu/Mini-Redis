@@ -1,0 +1,3 @@
+#define MAX_CLIENTS 1024
+#define READ_BUF_SIZE 1024
+
