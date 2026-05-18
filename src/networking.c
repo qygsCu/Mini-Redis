@@ -9,6 +9,7 @@
 #include <errno.h>
 #include "../include/dict.h"
 #include "../include/protocol.h"
+#include "../include/common.h"
 
 #define PORT 6379
 #define BUFFER_SIZE 1024
@@ -65,22 +66,52 @@ int main() {
     event.data.fd = server_fd;
     epoll_ctl(epoll_fd, EPOLL_CTL_ADD, server_fd, &event);
 
+    ClientState* clients[1024];
+
     while(1) {
-        client_fd = accept(server_fd, (struct sockaddr *)&client_addr, &client_len); //阻塞等待客户端连接
-        if (client_fd < 0) {
-            perror("Accept failed");
-            continue;
+        int n = epoll_wait(epoll_fd, events, MAX_EVENTS, -1);
+        for(int i = 0; i < n; i++) {
+            int active_fd = events[i].data.fd;
+            if (active_fd == server_fd) {
+                client_fd = accept(server_fd, (struct sockaddr *)&client_addr, &client_len); //阻塞等待客户端连接
+                if (client_fd < 0) {
+                    perror("Accept failed");
+                    continue;
+                }
+                printf("New client connected!\n");
+                set_nonblocking(client_fd);
+                clients[client_fd] = malloc(sizeof(ClientState));
+                clients[client_fd]->fd = client_fd;
+                memset(clients[client_fd]->buffer, 0, READ_BUF_SIZE);
+                clients[client_fd]->querylen = 0;
+                event.events = EPOLLIN | EPOLLET;
+                event.data.fd = client_fd;
+                epoll_ctl(epoll_fd, EPOLL_CTL_ADD, client_fd, &event);
+            }
+            else if (events[i].events & EPOLLIN) {
+                ClientState *client = clients[active_fd];
+                while(1) {
+                    int num_read = read(active_fd, client->buffer + client->querylen, READ_BUF_SIZE - client->querylen);
+                    if (num_read == -1) {
+                        if (errno == EAGAIN || errno == EWOULDBLOCK) break; //文件描述符没数据，且为非阻塞时，抛出EAGAIN；如果是阻塞，此处不会抛出EAGAIN，read会一直等
+                    }
+                    else if (num_read > 0) {
+                        client->querylen += num_read;
+                    }
+                }
+                
+            }
         }
 
-        printf("New client connected!\n");
-        memset(buffer, 0, BUFFER_SIZE);
-        int valread = read(client_fd, buffer, BUFFER_SIZE-1);
-        if (valread > 0) {
-            buffer[valread] = '\0';
-            printf("Received: %s", buffer);
-            parse_and_execute(db, buffer, client_fd);
-        }
-        close(client_fd);
+        // printf("New client connected!\n");
+        // memset(buffer, 0, BUFFER_SIZE);
+        // int valread = read(client_fd, buffer, BUFFER_SIZE-1);
+        // if (valread > 0) {
+        //     buffer[valread] = '\0';
+        //     printf("Received: %s", buffer);
+        //     parse_and_execute(db, buffer, client_fd);
+        // }
+        // close(client_fd);
         
     }
 
