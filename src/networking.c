@@ -99,7 +99,14 @@ int main() {
                         client->querylen += num_read;
                     }
                 }
-                
+                char *r_pos = find_crlf(client);
+                if (r_pos == NULL) break;
+                else {
+                    parse_and_execute(db, client->buffer, client->fd);
+                    int remaining_len = client->querylen - (r_pos - buffer + 2);
+                    memmove(client->buffer, r_pos + 2, remaining_len);
+                    client->querylen = remaining_len;
+                }
             }
         }
 
