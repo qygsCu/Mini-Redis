@@ -1,13 +1,24 @@
-TARGET = my_db.out
+#自动变量 $@目标文件 $^所有依赖文件 @<第一个依赖文件
 
-$(TARGET): main.o dict.o
-	gcc -g -Wall main.o dict.o -o $(TARGET)
+TARGET := server.out
+CC := gcc
+CFLAGS := -g -Wall -O1 -MMD -MP
 
-main.o: src/main.c include/dict.h
-	gcc -g -Wall -c src/main.c
+ALL_SRC := $(wildcard src/*.c)
+SRC := $(filter-out src/main.c, $(ALL_SRC))
+OBJS := $(patsubst *.c, *.o, $(SRC))
 
-dict.o: src/dict.c include/dict.h
-	gcc -g -Wall -c src/dict.c
+#自动生成依赖文件
+DEPS := $(SRC:.c=.d)
+
+$(TARGET): $(OBJS)
+	$(CC) $^ -o $@
+
+%.o: %.c
+	$(CC) $(CFLAGS) -c $@ $<
+
+-include $(DEPS)
+
 
 clean:
-	rm -f *.o $(TARGET)
+	rm -f $(OBJS) $(DEPS) $(TARGET)
