@@ -3,6 +3,7 @@
 
 #include <stddef.h>
 #include "dict.h"
+#include "common.h"
 
 void parse_and_execute(Dict *db, char *buffer, int client_fd);
 char* find_crlf(ClientState *client);
