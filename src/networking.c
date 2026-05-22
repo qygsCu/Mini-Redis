@@ -10,10 +10,9 @@
 #include "../include/dict.h"
 #include "../include/protocol.h"
 #include "../include/common.h"
+#include "../include/networking.h"
 
-#define PORT 6379
-#define BUFFER_SIZE 1024
-#define MAX_EVENTS 64
+ClientState* clients[MAX_CLIENTS];
 
 void set_nonblocking(int fd) {
     int flag = fcntl(fd, F_GETFL, 0); //获取文件属性标志
@@ -26,15 +25,10 @@ void set_nonblocking(int fd) {
     }
 }
 
-int main() {
-    int server_fd, client_fd;
-    struct sockaddr_in server_addr, client_addr;
-    socklen_t client_len = sizeof(client_addr);
-    char buffer[BUFFER_SIZE];
+int init_server_socket(int port) {
+    int server_fd;
+    struct sockaddr_in server_addr;
 
-    Dict *db = dictCreate(16);
-
-    //创建Socket
     if ((server_fd = socket(AF_INET, SOCK_STREAM, 0)) < 0) {
         perror("socket failed");
         exit(EXIT_FAILURE);
@@ -45,7 +39,7 @@ int main() {
 
     server_addr.sin_family = AF_INET;
     server_addr.sin_addr.s_addr = INADDR_ANY;
-    server_addr.sin_port = htons(PORT);
+    server_addr.sin_port = htons(port);
 
     //socket创建空socket，bind函数绑定信息
     if(bind(server_fd, (struct sockaddr *)&server_addr, sizeof(server_addr)) < 0) {
@@ -58,86 +52,90 @@ int main() {
         perror("Bind failed");
         exit(EXIT_FAILURE);
     }
-    printf("Mini-Redis is listening on port %d...\n", PORT);
+    printf("Mini-Redis is listening on port %d...\n", port);
 
+    return server_fd;
+}
+
+int init_epoll(int server_fd) {
     int epoll_fd = epoll_create1(0);
-    struct epoll_event event, events[MAX_EVENTS];
+    struct epoll_event event;
     event.events = EPOLLIN;
     event.data.fd = server_fd;
     epoll_ctl(epoll_fd, EPOLL_CTL_ADD, server_fd, &event);
 
-    ClientState* clients[1024];
+    return epoll_fd;
+}
 
-    while(1) {
-        int n = epoll_wait(epoll_fd, events, MAX_EVENTS, -1);
-        for(int i = 0; i < n; i++) {
-            int active_fd = events[i].data.fd;
-            if (active_fd == server_fd) {
-                client_fd = accept(server_fd, (struct sockaddr *)&client_addr, &client_len); //阻塞等待客户端连接
-                if (client_fd < 0) {
-                    perror("Accept failed");
-                    continue;
-                }
-                printf("New client connected!\n");
-                set_nonblocking(client_fd);
-                clients[client_fd] = malloc(sizeof(ClientState));
-                clients[client_fd]->fd = client_fd;
-                memset(clients[client_fd]->buffer, 0, READ_BUF_SIZE);
-                clients[client_fd]->querylen = 0;
-                event.events = EPOLLIN | EPOLLET;
-                event.data.fd = client_fd;
-                epoll_ctl(epoll_fd, EPOLL_CTL_ADD, client_fd, &event);
-            }
-            else if (events[i].events & EPOLLIN) {
-                ClientState *client = clients[active_fd];
-                while(1) {
-                    int num_read = read(active_fd, client->buffer + client->querylen, READ_BUF_SIZE - client->querylen);
-                    if (num_read == -1) {
-                        //文件描述符没数据，且为非阻塞时，抛出EAGAIN；如果是阻塞，此处不会抛出EAGAIN，read会一直等
-                        if (errno == EAGAIN || errno == EWOULDBLOCK) break; 
-                    }
-                    else if (num_read > 0) {
-                        client->querylen += num_read;
-                    }
-                    else if (num_read == 0) {
-                        printf("Client disconnected.\n");
-                        epoll_ctl(epoll_fd, EPOLL_CTL_DEL, active_fd, NULL);
-                        close(active_fd);
-                        free(clients[active_fd]);
-                        clients[active_fd] = NULL;
-                        break;
-                    }
-                }
-                int executed_len = 0;
-                while(1) {
-                    char *r_pos = find_crlf(client->buffer + executed_len, client->querylen - executed_len);
-                    if (r_pos == NULL) break;
-                    else {
-                        parse_and_execute(db, client->buffer, executed_len, client->fd);
-                        executed_len += r_pos - client->buffer + 2;
-                    }
-                }
-                client->querylen -= executed_len;
-                memmove(client->buffer, client->buffer + executed_len, client->querylen);
-            }
-        }
-
-        // printf("New client connected!\n");
-        // memset(buffer, 0, BUFFER_SIZE);
-        // int valread = read(client_fd, buffer, BUFFER_SIZE-1);
-        // if (valread > 0) {
-        //     buffer[valread] = '\0';
-        //     printf("Received: %s", buffer);
-        //     parse_and_execute(db, buffer, client_fd);
-        // }
-        // close(client_fd);
-        
+void init_client_manager(void) {
+    for (int i = 0; i < MAX_CLIENTS; i++) {
+        clients[i] = NULL;
     }
+}
 
-    dictFree(db);
-    return 0;
+void destroy_client_manager(void) {
+    for (int i = 0; i < MAX_CLIENTS; i++) {
+        if (clients[i] != NULL) {
+            close(clients[i]->fd);
+            free(clients[i]);
+            clients[i] = NULL;
+        }
+    }
+}
 
+void accept_new_client(int server_fd, int epoll_fd) {
+    int client_fd;
+    struct sockaddr_in client_addr;
+    socklen_t client_len = sizeof(client_addr);
+    struct epoll_event event;
 
+    client_fd = accept(server_fd, (struct sockaddr *)&client_addr, &client_len); //阻塞等待客户端连接
+    if (client_fd < 0) {
+        perror("Accept failed");
+        return;
+    }
+    printf("New client connected!\n");
+    set_nonblocking(client_fd);
+    clients[client_fd] = malloc(sizeof(ClientState));
+    clients[client_fd]->fd = client_fd;
+    memset(clients[client_fd]->buffer, 0, READ_BUF_SIZE);
+    clients[client_fd]->querylen = 0;
+    event.events = EPOLLIN | EPOLLET;
+    event.data.fd = client_fd;
+    epoll_ctl(epoll_fd, EPOLL_CTL_ADD, client_fd, &event);
+}
+
+void handle_client_readable(int active_fd, int epoll_fd, Dict *db) {
+    ClientState *client = clients[active_fd];
+    while(1) {
+        int num_read = read(active_fd, client->buffer + client->querylen, READ_BUF_SIZE - client->querylen);
+        if (num_read == -1) {
+            //文件描述符没数据，且为非阻塞时，抛出EAGAIN；如果是阻塞，此处不会抛出EAGAIN，read会一直等
+            if (errno == EAGAIN || errno == EWOULDBLOCK) break;
+        }
+        else if (num_read > 0) {
+            client->querylen += num_read;
+        }
+        else if (num_read == 0) {
+            printf("Client disconnected.\n");
+            epoll_ctl(epoll_fd, EPOLL_CTL_DEL, active_fd, NULL);
+            close(active_fd);
+            free(clients[active_fd]);
+            clients[active_fd] = NULL;
+            break;
+        }
+    }
+    int executed_len = 0;
+    while(1) {
+        char *r_pos = find_crlf(client->buffer + executed_len, client->querylen - executed_len);
+        if (r_pos == NULL) break;
+        else {
+            parse_and_execute(db, client->buffer, executed_len, client->fd);
+            executed_len += r_pos - client->buffer + 2;
+        }
+    }
+    client->querylen -= executed_len;
+    memmove(client->buffer, client->buffer + executed_len, client->querylen);
 }
 
 /*

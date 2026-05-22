@@ -5,7 +5,7 @@ CC := gcc
 CFLAGS := -g -Wall -O0 -MMD -MP
 
 ALL_SRC := $(wildcard src/*.c)
-SRC := $(filter-out src/main.c, $(ALL_SRC))
+SRC := $(ALL_SRC)
 OBJS := $(patsubst %.c, %.o, $(SRC))
 
 #自动生成依赖文件
