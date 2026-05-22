@@ -93,7 +93,8 @@ int main() {
                 while(1) {
                     int num_read = read(active_fd, client->buffer + client->querylen, READ_BUF_SIZE - client->querylen);
                     if (num_read == -1) {
-                        if (errno == EAGAIN || errno == EWOULDBLOCK) break; //文件描述符没数据，且为非阻塞时，抛出EAGAIN；如果是阻塞，此处不会抛出EAGAIN，read会一直等
+                        //文件描述符没数据，且为非阻塞时，抛出EAGAIN；如果是阻塞，此处不会抛出EAGAIN，read会一直等
+                        if (errno == EAGAIN || errno == EWOULDBLOCK) break; 
                     }
                     else if (num_read > 0) {
                         client->querylen += num_read;
@@ -103,9 +104,9 @@ int main() {
                 if (r_pos == NULL) break;
                 else {
                     parse_and_execute(db, client->buffer, client->fd);
-                    int remaining_len = client->querylen - (r_pos - buffer + 2);
+                    int remaining_len = 1024 - (r_pos - client->buffer + 2);
+                    client->querylen -= (r_pos - client->buffer + 2);
                     memmove(client->buffer, r_pos + 2, remaining_len);
-                    client->querylen = remaining_len;
                 }
             }
         }
