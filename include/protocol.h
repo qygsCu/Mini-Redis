@@ -5,7 +5,7 @@
 #include "dict.h"
 #include "common.h"
 
-void parse_and_execute(Dict *db, char *buffer, int client_fd);
-char* find_crlf(ClientState *client);
+void parse_and_execute(Dict *db, char *buffer, int bias, int client_fd);
+char* find_crlf(char *start_ptr, int len);
 
 #endif

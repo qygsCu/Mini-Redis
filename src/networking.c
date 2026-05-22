@@ -99,15 +99,26 @@ int main() {
                     else if (num_read > 0) {
                         client->querylen += num_read;
                     }
+                    else if (num_read == 0) {
+                        printf("Client disconnected.\n");
+                        epoll_ctl(epoll_fd, EPOLL_CTL_DEL, active_fd, NULL);
+                        close(active_fd);
+                        free(clients[active_fd]);
+                        clients[active_fd] = NULL;
+                        break;
+                    }
                 }
-                char *r_pos = find_crlf(client);
-                if (r_pos == NULL) break;
-                else {
-                    parse_and_execute(db, client->buffer, client->fd);
-                    int remaining_len = 1024 - (r_pos - client->buffer + 2);
-                    client->querylen -= (r_pos - client->buffer + 2);
-                    memmove(client->buffer, r_pos + 2, remaining_len);
+                int executed_len = 0;
+                while(1) {
+                    char *r_pos = find_crlf(client->buffer + executed_len, client->querylen - executed_len);
+                    if (r_pos == NULL) break;
+                    else {
+                        parse_and_execute(db, client->buffer, executed_len, client->fd);
+                        executed_len += r_pos - client->buffer + 2;
+                    }
                 }
+                client->querylen -= executed_len;
+                memmove(client->buffer, client->buffer + executed_len, client->querylen);
             }
         }
 

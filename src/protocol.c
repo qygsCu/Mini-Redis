@@ -4,12 +4,13 @@
 #include "../include/dict.h"
 #include "../include/common.h"
 
-void parse_and_execute(Dict *db, char *buffer, int client_fd) {
+void parse_and_execute(Dict *db, char *buffer, int bias, int client_fd) {
     char cmd[16] = {0};
     char key[64] = {0};
     char value[256] = {0};
     char response[512] = {0};
 
+    buffer += bias;
     buffer[strcspn(buffer, "\r\n")] = 0;
     int matched = sscanf(buffer, "%15s %63s %255s", cmd, key, value);
     if (matched == 2 && strcmp(cmd, "GET") == 0) {
@@ -28,13 +29,13 @@ void parse_and_execute(Dict *db, char *buffer, int client_fd) {
     else {
         sprintf(response, "-ERR unknown command or wrong arguments\r\n");
     }
-    write(client_fd, response, strlen(response));
+    int res = write(client_fd, response, strlen(response));
+    if (res < 0) perror("write to client failed");
 }
 
 //找到第一个合法\r\n并返回\r的指针
-char* find_crlf(ClientState *client) {
-    char *buf = client->buffer;
-    int len = client->querylen;
+char* find_crlf(char *start_ptr, int len) {
+    char *buf = start_ptr;
     char *r_pos = buf;
     int remaining_len = len;
     while(remaining_len > 0) {
